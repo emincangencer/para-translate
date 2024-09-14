@@ -1,0 +1,299 @@
+import curses
+import os
+import textwrap
+from docx import Document as DocxDocument
+import ollama
+
+def list_documents():
+    try:
+        return [f for f in os.listdir('documents') if os.path.isfile(os.path.join('documents', f))]
+    except FileNotFoundError:
+        return []
+
+def read_file(file_path):
+    try:
+        if file_path.endswith('.docx'):
+            doc = DocxDocument(file_path)
+            return '\n'.join([para.text for para in doc.paragraphs])
+        else:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return f.read()
+    except UnicodeDecodeError:
+        try:
+            with open(file_path, 'r', encoding='latin-1') as f:
+                return f.read()
+        except Exception as e:
+            print(f"Failed to read {file_path}: {e}")
+            return ""
+
+def write_file(file_path, paragraphs):
+    if file_path.endswith('.docx'):
+        doc = DocxDocument()
+        for para in paragraphs:
+            doc.add_paragraph(para)
+        doc.save(file_path)
+    else:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write('\n\n'.join(paragraphs))
+
+def segment_paragraphs(text):
+    paragraphs = text.split('\n\n')
+    paragraphs = [para for para in paragraphs if para.strip() != '']
+    return paragraphs
+
+def translate_text_with_ollama(text, source_language, target_language, model_name):
+    prompt = f"Only provide the translation and nothing else. Translate this {source_language} text into {target_language}: {text}"
+    response = ollama.chat(
+        model=model_name,
+        messages=[{'role': 'user', 'content': prompt}],
+        stream=False
+    )
+    return response['message']['content']
+
+def get_available_models():
+    models_response = ollama.list()
+    models = [model['name'] for model in models_response['models']]
+    return models
+
+def wrap_text(text, width):
+    return textwrap.wrap(text, width)
+
+def load_languages():
+    try:
+        with open('languages.txt', 'r') as f:
+            languages = [line.strip() for line in f if line.strip()]
+        return languages
+    except FileNotFoundError:
+        print("languages.txt not found.")
+        return []
+
+def display_translation_tool(screen):
+    curses.curs_set(0)  # Hide the cursor
+    height, width = screen.getmaxyx()
+
+    if height < 20 or width < 80:
+        screen.addstr(0, 0, "Terminal window too small. Please resize.")
+        screen.refresh()
+        screen.getch()
+        return
+
+    left_win = screen.subwin(height - 6, width // 2, 0, 0)
+    right_win = screen.subwin(height - 6, width // 2, 0, width // 2)
+    status_win = screen.subwin(2, width, height - 2, 0)
+
+    languages = load_languages()
+    if not languages:
+        screen.addstr(0, 0, "No languages found in languages.txt.")
+        screen.refresh()
+        screen.getch()
+        return
+
+    models = get_available_models()
+
+    source_lang = 0
+    target_lang = 0
+    selected_model = 0
+    selecting = 'language'
+    selected_doc = 0
+    model_name = None
+
+    def refresh_status():
+        status_win.clear()
+        status_win.addstr(1, 0, "Press 'q' to quit.")
+        status_win.refresh()
+
+    def display_language_selection():
+        screen.clear()
+        screen.addstr(0, 0, "Select source language:")
+        for idx, lang in enumerate(languages):
+            if idx == source_lang:
+                screen.addstr(idx + 2, 2, f"> {lang}", curses.A_BOLD)
+            else:
+                screen.addstr(idx + 2, 2, lang)
+
+        screen.addstr(len(languages) + 3, 0, "Select target language:")
+        for idx, lang in enumerate(languages):
+            if idx == target_lang:
+                screen.addstr(len(languages) + 5 + idx, 2, f"> {lang}", curses.A_BOLD)
+            else:
+                screen.addstr(len(languages) + 5 + idx, 2, lang)
+
+    def display_document_selection():
+        documents = list_documents()
+        screen.clear()
+        screen.addstr(0, 0, "Select a document to translate:")
+        for idx, doc in enumerate(documents):
+            if idx == selected_doc:
+                screen.addstr(idx + 2, 2, f"> {doc}", curses.A_BOLD)
+            else:
+                screen.addstr(idx + 2, 2, doc)
+
+    def display_model_selection():
+        global models, selected_model  # Make sure models is a global variable
+        models = get_available_models()  # Refresh models list
+        if not models:
+            selected_model = None  # Handle empty model list
+        current_model = 0 if models else None  # Only set a model if there are models
+        
+        while True:
+            screen.clear()
+            if models:
+                for idx, model in enumerate(models):
+                    if idx == current_model:
+                        screen.addstr(idx + 1, 0, f"> {model}", curses.A_BOLD)
+                    else:
+                        screen.addstr(idx + 1, 0, f"  {model}")
+                screen.addstr(len(models) + 2, 0, "Press 'Enter' to select a model, 'r' to refresh")
+            else:
+                screen.addstr(0, 0, "No models available.")
+                screen.addstr(1, 0, "Press 'r' to refresh")
+
+            screen.refresh()
+
+            key = screen.getch()
+            if key == curses.KEY_UP:
+                if models:
+                    current_model = (current_model - 1) % len(models)
+            elif key == curses.KEY_DOWN:
+                if models:
+                    current_model = (current_model + 1) % len(models)
+            elif key == 10:  # Enter key to select a model
+                if models and current_model is not None:
+                    global model_name
+                    model_name = models[current_model]
+                    return
+            elif key == ord('r'):  # 'r' key to refresh model list
+                display_model_selection()  # Refresh model list
+
+    def process_key(key):
+        nonlocal selecting, source_lang, target_lang, selected_doc, selected_model, model_name
+
+        if selecting == 'language':
+            if key == curses.KEY_UP:
+                source_lang = (source_lang - 1) % len(languages)
+            elif key == curses.KEY_DOWN:
+                source_lang = (source_lang + 1) % len(languages)
+            elif key == curses.KEY_LEFT:
+                target_lang = (target_lang - 1) % len(languages)
+            elif key == curses.KEY_RIGHT:
+                target_lang = (target_lang + 1) % len(languages)
+            elif key == 10:  # Enter key to confirm language selection
+                selecting = 'document'
+        elif selecting == 'document':
+            documents = list_documents()
+            if key == curses.KEY_UP:
+                selected_doc = (selected_doc - 1) % len(documents) if documents else 0
+            elif key == curses.KEY_DOWN:
+                selected_doc = (selected_doc + 1) % len(documents) if documents else 0
+            elif key == 10:  # Enter key to select a document
+                selecting = 'model'
+        elif selecting == 'model':
+            if key == curses.KEY_UP:
+                if models:
+                    selected_model = (selected_model - 1) % len(models) if models else 0
+            elif key == curses.KEY_DOWN:
+                if models:
+                    selected_model = (selected_model + 1) % len(models) if models else 0
+            elif key == 10:  # Enter key to confirm model selection
+                if models and selected_model is not None:
+                    model_name = models[selected_model]
+                    selecting = 'translation'  # Move to translation stage
+            elif key == ord('r'):  # 'r' key to refresh model list
+                display_model_selection()
+
+    def start_translation():
+        nonlocal model_name, source_lang, target_lang
+        source_language = languages[source_lang]
+        target_language = languages[target_lang]
+
+        documents = list_documents()
+        file_path = os.path.join('documents', documents[selected_doc])
+        content = read_file(file_path)
+
+        paragraphs = segment_paragraphs(content)
+        current_paragraph = 0
+        translations = ['' for _ in paragraphs]
+
+        translation_dir = 'translations'
+        os.makedirs(translation_dir, exist_ok=True)
+        file_ext = os.path.splitext(documents[selected_doc])[1]
+        translation_file_path = os.path.join(translation_dir, f"{os.path.splitext(documents[selected_doc])[0]}_{target_language}{file_ext}")
+
+        if os.path.exists(translation_file_path):
+            translated_content = read_file(translation_file_path).split('\n\n')
+            for i, translation in enumerate(translated_content):
+                if i < len(translations):
+                    translations[i] = translation
+
+        while True:
+            left_win.clear()
+            right_win.clear()
+
+            gap = "    "  # Define a gap between the windows
+
+            # Display paragraphs on the left window (source language)
+            for i, paragraph in enumerate(paragraphs):
+                if i >= height - 6:
+                    break  # Stop if the paragraph index exceeds window height
+                display_text = f"> {paragraph}" if i == current_paragraph else f"  {paragraph}"
+                wrapped_text = wrap_text(display_text, width // 2 - 4)  # Adjust the wrapping width for source
+                for line_num, line in enumerate(wrapped_text):
+                    if i + line_num >= height - 6:
+                        break  # Stop if the line index exceeds window height
+                    try:
+                        left_win.addstr(i + line_num, 0, line)
+                    except curses.error as e:
+                        print(f"Error writing to left window: {e}, line: {line}, index: {i + line_num}")
+
+            # Display translations on the right window (target language)
+            for i, translation in enumerate(translations):
+                if i >= height - 6:
+                    break  # Stop if the translation index exceeds window height
+                wrapped_text = wrap_text(translation, width // 2 - 4)  # Adjust the wrapping width for translation
+                for line_num, line in enumerate(wrapped_text):
+                    if i + line_num >= height - 6:
+                        break  # Stop if the line index exceeds window height
+                    try:
+                        right_win.addstr(i + line_num, 0, gap + line)  # Add the gap before the translation
+                    except curses.error as e:
+                        print(f"Error writing to right window: {e}, line: {line}, index: {i + line_num}")
+
+            left_win.refresh()
+            right_win.refresh()
+
+            key = screen.getch()
+            if key == curses.KEY_UP:
+                current_paragraph = (current_paragraph - 1) % len(paragraphs)
+            elif key == curses.KEY_DOWN:
+                current_paragraph = (current_paragraph + 1) % len(paragraphs)
+            elif key == 10:  # Enter key to translate the selected paragraph
+                if paragraphs[current_paragraph].strip():
+                    translated = translate_text_with_ollama(paragraphs[current_paragraph], source_language, target_language, model_name)
+                    translations[current_paragraph] = translated
+                else:
+                    translations[current_paragraph] = ''
+
+            # Save translations to a file
+            write_file(translation_file_path, translations)
+
+            if key == ord('q'):
+                return
+
+    while True:
+        if selecting == 'language':
+            display_language_selection()
+        elif selecting == 'document':
+            display_document_selection()
+        elif selecting == 'model':
+            display_model_selection()
+        elif selecting == 'translation':
+            start_translation()
+
+        refresh_status()
+        key = screen.getch()
+        if key == ord('q'):
+            return
+        process_key(key)
+
+if __name__ == "__main__":
+    curses.wrapper(display_translation_tool)
