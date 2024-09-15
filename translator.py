@@ -37,9 +37,17 @@ def write_file(file_path, paragraphs):
             f.write('\n\n'.join(paragraphs))
 
 def segment_paragraphs(text):
-    paragraphs = text.split('\n\n')
+    """
+    Segments the text by line breaks to detect each new line as a segment.
+    """
+    # Split the text by single line breaks to handle individual lines as segments
+    paragraphs = text.splitlines()
+    
+    # Remove empty lines if any
     paragraphs = [para for para in paragraphs if para.strip() != '']
+    
     return paragraphs
+
 
 def translate_text_with_ollama(text, source_language, target_language, model_name):
     prompt = f"Only provide the translation and nothing else. Translate this {source_language} text into {target_language}: {text}"
