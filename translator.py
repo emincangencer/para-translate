@@ -213,6 +213,7 @@ def display_translation_tool(screen):
         paragraphs = segment_paragraphs(content)
         current_paragraph = 0
         translations = ['' for _ in paragraphs]
+        scroll_position = 0  # To control the scroll of paragraphs
 
         translation_dir = 'translations'
         os.makedirs(translation_dir, exist_ok=True)
@@ -230,42 +231,61 @@ def display_translation_tool(screen):
             right_win.clear()
 
             gap = "    "  # Define a gap between the windows
+            display_height = height - 6  # Height available for displaying lines
 
-            # Display paragraphs on the left window (source language)
-            for i, paragraph in enumerate(paragraphs):
-                if i >= height - 6:
-                    break  # Stop if the paragraph index exceeds window height
-                display_text = f"> {paragraph}" if i == current_paragraph else f"  {paragraph}"
-                wrapped_text = wrap_text(display_text, width // 2 - 4)  # Adjust the wrapping width for source
-                for line_num, line in enumerate(wrapped_text):
-                    if i + line_num >= height - 6:
-                        break  # Stop if the line index exceeds window height
-                    try:
-                        left_win.addstr(i + line_num, 0, line)
-                    except curses.error as e:
-                        print(f"Error writing to left window: {e}, line: {line}, index: {i + line_num}")
+            # Wrap the paragraphs and translations for the left and right windows
+            wrapped_paragraphs = [wrap_text(para, width // 2 - 4) for para in paragraphs]
+            wrapped_translations = [wrap_text(translations[i], width // 2 - 4) for i in range(len(translations))]
 
-            # Display translations on the right window (target language)
-            for i, translation in enumerate(translations):
-                if i >= height - 6:
-                    break  # Stop if the translation index exceeds window height
-                wrapped_text = wrap_text(translation, width // 2 - 4)  # Adjust the wrapping width for translation
-                for line_num, line in enumerate(wrapped_text):
-                    if i + line_num >= height - 6:
-                        break  # Stop if the line index exceeds window height
-                    try:
-                        right_win.addstr(i + line_num, 0, gap + line)  # Add the gap before the translation
-                    except curses.error as e:
-                        print(f"Error writing to right window: {e}, line: {line}, index: {i + line_num}")
+            # Create a list of lines to display for both the source (left) and translations (right)
+            left_display_lines = []
+            right_display_lines = []
+            
+            for i, wrapped_paragraph in enumerate(wrapped_paragraphs):
+                if i == current_paragraph:
+                    # Add `>` indicator for the current paragraph
+                    left_display_lines.append([f"> {wrapped_paragraph[0]}"] + wrapped_paragraph[1:])
+                else:
+                    left_display_lines.append(wrapped_paragraph)
+                
+                # Add corresponding translation or blank if no translation
+                right_display_lines.append(wrapped_translations[i] if i < len(wrapped_translations) else [''])
+
+                # Add a blank line to separate paragraphs visually
+                left_display_lines.append([""])
+                right_display_lines.append([""])
+
+            # Flatten the lists
+            left_display_lines = [line for para in left_display_lines for line in para]
+            right_display_lines = [line for para in right_display_lines for line in para]
+
+            # Ensure scroll position is correct
+            max_scroll = max(0, len(left_display_lines) - display_height)
+            scroll_position = min(scroll_position, max_scroll)
+            scroll_position = max(scroll_position, 0)
+
+            # Display paragraphs and translations
+            for i in range(scroll_position, min(scroll_position + display_height, len(left_display_lines))):
+                try:
+                    left_line = left_display_lines[i] if i < len(left_display_lines) else ""
+                    right_line = right_display_lines[i] if i < len(right_display_lines) else ""
+
+                    # Add the lines to the left and right windows
+                    left_win.addstr(i - scroll_position, 0, left_line)
+                    right_win.addstr(i - scroll_position, 0, gap + right_line)
+                except curses.error:
+                    pass
 
             left_win.refresh()
             right_win.refresh()
 
             key = screen.getch()
+
+            # Scroll through paragraphs
             if key == curses.KEY_UP:
-                current_paragraph = (current_paragraph - 1) % len(paragraphs)
+                current_paragraph = max(0, current_paragraph - 1)  # Move to previous paragraph
             elif key == curses.KEY_DOWN:
-                current_paragraph = (current_paragraph + 1) % len(paragraphs)
+                current_paragraph = min(len(paragraphs) - 1, current_paragraph + 1)  # Move to next paragraph
             elif key == 10:  # Enter key to translate the selected paragraph
                 if paragraphs[current_paragraph].strip():
                     translated = translate_text_with_ollama(paragraphs[current_paragraph], source_language, target_language, model_name)
@@ -273,11 +293,17 @@ def display_translation_tool(screen):
                 else:
                     translations[current_paragraph] = ''
 
+            # Update the scroll position based on the current paragraph
+            scroll_position = sum(len(wrap_text(paragraphs[i], width // 2 - 4)) + 1 for i in range(current_paragraph))
+
             # Save translations to a file
             write_file(translation_file_path, translations)
 
             if key == ord('q'):
                 return
+
+
+
 
     while True:
         if selecting == 'language':
