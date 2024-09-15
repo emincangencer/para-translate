@@ -301,6 +301,9 @@ def display_translation_tool(screen):
                 else:
                     translations[current_paragraph] = ''
 
+            elif key == curses.KEY_RIGHT:  # Right arrow key to send text as is without translation
+                translations[current_paragraph] = paragraphs[current_paragraph]
+
             # Update the scroll position based on the current paragraph
             scroll_position = sum(len(wrap_text(paragraphs[i], width // 2 - 4)) + 1 for i in range(current_paragraph))
 
@@ -309,9 +312,6 @@ def display_translation_tool(screen):
 
             if key == ord('q'):
                 return
-
-
-
 
     while True:
         if selecting == 'language':
