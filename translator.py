@@ -14,7 +14,7 @@ def read_file(file_path):
     try:
         if file_path.endswith('.docx'):
             doc = DocxDocument(file_path)
-            return '\n'.join([para.text for para in doc.paragraphs])
+            return '\n\n'.join([para.text for para in doc.paragraphs])
         else:
             with open(file_path, 'r', encoding='utf-8') as f:
                 return f.read()
