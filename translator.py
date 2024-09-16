@@ -18,13 +18,12 @@ def read_file(file_path):
         else:
             with open(file_path, 'r', encoding='utf-8') as f:
                 return f.read()
-    except UnicodeDecodeError:
-        try:
-            with open(file_path, 'r', encoding='latin-1') as f:
-                return f.read()
-        except Exception as e:
-            print(f"Failed to read {file_path}: {e}")
-            return ""
+    except (UnicodeDecodeError, FileNotFoundError) as e:
+        print(f"Error reading {file_path}: {e}")
+        return ""
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return ""
 
 def write_file(file_path, paragraphs):
     if file_path.endswith('.docx'):
