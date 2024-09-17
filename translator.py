@@ -283,6 +283,13 @@ def display_translation_tool(screen):
                 except curses.error:
                     pass
 
+            # Display word count of the current paragraph
+            current_paragraph_word_count = len(paragraphs[current_paragraph].split())
+            status_win.clear()
+            status_win.addstr(0, 0, f"Paragraph {current_paragraph + 1}/{len(paragraphs)} - Word count: {current_paragraph_word_count}")
+            status_win.addstr(1, 0, "Press 'q' to quit.")
+            status_win.refresh()
+
             left_win.refresh()
             right_win.refresh()
 
