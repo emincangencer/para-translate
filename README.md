@@ -81,7 +81,7 @@ A terminal-based tool for translating documents using the Ollama API locally.
 - **Document Errors:** Check the `documents` directory for supported file types and correct filenames.
 
 ## TO DO
-    - Better handling long paragraphs for LLM.
+    - ~~Better handling long paragraphs for LLM.~~ (Warn if a segment is longer than 1000 words.)
     - Translate headers and footers.
     - Transfer indents and spaces.
     - Transfer docx file formatting (Font etc.).
