@@ -84,6 +84,10 @@ def display_translation_tool(screen):
         screen.getch()
         return
 
+    # Initialize color pairs
+    curses.start_color()
+    curses.init_pair(1, curses.COLOR_RED, curses.COLOR_BLACK)  # Color pair 1 for red text
+
     left_win = screen.subwin(height - 6, width // 2, 0, 0)
     right_win = screen.subwin(height - 6, width // 2, 0, width // 2)
     status_win = screen.subwin(2, width, height - 2, 0)
@@ -247,14 +251,14 @@ def display_translation_tool(screen):
             # Create a list of lines to display for both the source (left) and translations (right)
             left_display_lines = []
             right_display_lines = []
-            
+
             for i, wrapped_paragraph in enumerate(wrapped_paragraphs):
                 if i == current_paragraph:
                     # Add `>` indicator for the current paragraph
                     left_display_lines.append([f"> {wrapped_paragraph[0]}"] + wrapped_paragraph[1:])
                 else:
                     left_display_lines.append(wrapped_paragraph)
-                
+
                 # Add corresponding translation or blank if no translation
                 right_display_lines.append(wrapped_translations[i] if i < len(wrapped_translations) else [''])
 
@@ -277,16 +281,23 @@ def display_translation_tool(screen):
                     left_line = left_display_lines[i] if i < len(left_display_lines) else ""
                     right_line = right_display_lines[i] if i < len(right_display_lines) else ""
 
-                    # Add the lines to the left and right windows
+                    # Display left window text
                     left_win.addstr(i - scroll_position, 0, left_line)
+
+                    # Display right window text
                     right_win.addstr(i - scroll_position, 0, gap + right_line)
                 except curses.error:
                     pass
 
-            # Display word count of the current paragraph
+            # Display word count of the current paragraph with conditional coloring
             current_paragraph_word_count = len(paragraphs[current_paragraph].split())
             status_win.clear()
-            status_win.addstr(0, 0, f"Paragraph {current_paragraph + 1}/{len(paragraphs)} - Word count: {current_paragraph_word_count}")
+            # Correctly format the paragraph count and word count
+            paragraph_info = f"Paragraph {current_paragraph + 1}/{len(paragraphs)} - "
+            word_count_info = f"Word count: {current_paragraph_word_count}"
+
+            status_win.addstr(0, 0, paragraph_info)
+            status_win.addstr(word_count_info, curses.color_pair(1) if current_paragraph_word_count > 1000 else curses.A_NORMAL)
             status_win.addstr(1, 0, "Press 'q' to quit.")
             status_win.refresh()
 
