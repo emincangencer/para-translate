@@ -2,6 +2,7 @@ import curses
 import os
 import textwrap
 from docx import Document as DocxDocument
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 import ollama
 
 def list_documents():
@@ -14,39 +15,31 @@ def read_file(file_path):
     try:
         if file_path.endswith('.docx'):
             doc = DocxDocument(file_path)
-            return '\n\n'.join([para.text for para in doc.paragraphs])
+            paragraphs = [(para.text, para.alignment) for para in doc.paragraphs]
+            return paragraphs
         else:
             with open(file_path, 'r', encoding='utf-8') as f:
-                return f.read()
+                return [(line, WD_ALIGN_PARAGRAPH.LEFT) for line in f.read().splitlines()]
     except (UnicodeDecodeError, FileNotFoundError) as e:
         print(f"Error reading {file_path}: {e}")
-        return ""
+        return []
     except Exception as e:
         print(f"Unexpected error: {e}")
-        return ""
+        return []
 
 def write_file(file_path, paragraphs):
     if file_path.endswith('.docx'):
         doc = DocxDocument()
-        for para in paragraphs:
-            doc.add_paragraph(para)
+        for text, alignment in paragraphs:
+            para = doc.add_paragraph(text)
+            para.alignment = alignment
         doc.save(file_path)
     else:
         with open(file_path, 'w', encoding='utf-8') as f:
-            f.write('\n\n'.join(paragraphs))
+            f.write('\n\n'.join([text for text, _ in paragraphs]))
 
-def segment_paragraphs(text):
-    """
-    Segments the text by line breaks to detect each new line as a segment.
-    """
-    # Split the text by single line breaks to handle individual lines as segments
-    paragraphs = text.splitlines()
-    
-    # Remove empty lines if any
-    paragraphs = [para for para in paragraphs if para.strip() != '']
-    
-    return paragraphs
-
+def segment_paragraphs(text_and_alignments):
+    return [(text, alignment) for text, alignment in text_and_alignments if text.strip()]
 
 def translate_text_with_ollama(text, source_language, target_language, model_name):
     prompt = f"Only provide the translation and nothing else. Translate this {source_language} text into {target_language}: {text}"
@@ -232,8 +225,8 @@ def display_translation_tool(screen):
         translation_file_path = os.path.join(translation_dir, f"{os.path.splitext(documents[selected_doc])[0]}_{target_language}{file_ext}")
 
         if os.path.exists(translation_file_path):
-            translated_content = read_file(translation_file_path).split('\n\n')
-            for i, translation in enumerate(translated_content):
+            translated_content = read_file(translation_file_path)
+            for i, (translation, _) in enumerate(translated_content):
                 if i < len(translations):
                     translations[i] = translation
 
@@ -245,7 +238,7 @@ def display_translation_tool(screen):
             display_height = height - 6  # Height available for displaying lines
 
             # Wrap the paragraphs and translations for the left and right windows
-            wrapped_paragraphs = [wrap_text(para, width // 2 - 4) for para in paragraphs]
+            wrapped_paragraphs = [wrap_text(text, width // 2 - 4) for text, _ in paragraphs]
             wrapped_translations = [wrap_text(translations[i], width // 2 - 4) for i in range(len(translations))]
 
             # Create a list of lines to display for both the source (left) and translations (right)
@@ -290,7 +283,7 @@ def display_translation_tool(screen):
                     pass
 
             # Display word count of the current paragraph with conditional coloring
-            current_paragraph_word_count = len(paragraphs[current_paragraph].split())
+            current_paragraph_word_count = len(paragraphs[current_paragraph][0].split())
             status_win.clear()
             # Correctly format the paragraph count and word count
             paragraph_info = f"Paragraph {current_paragraph + 1}/{len(paragraphs)} - "
@@ -312,20 +305,20 @@ def display_translation_tool(screen):
             elif key == curses.KEY_DOWN:
                 current_paragraph = min(len(paragraphs) - 1, current_paragraph + 1)  # Move to next paragraph
             elif key == 10:  # Enter key to translate the selected paragraph
-                if paragraphs[current_paragraph].strip():
-                    translated = translate_text_with_ollama(paragraphs[current_paragraph], source_language, target_language, model_name)
+                if paragraphs[current_paragraph][0].strip():
+                    translated = translate_text_with_ollama(paragraphs[current_paragraph][0], source_language, target_language, model_name)
                     translations[current_paragraph] = translated
                 else:
                     translations[current_paragraph] = ''
 
             elif key == curses.KEY_RIGHT:  # Right arrow key to send text as is without translation
-                translations[current_paragraph] = paragraphs[current_paragraph]
+                translations[current_paragraph] = paragraphs[current_paragraph][0]
 
             # Update the scroll position based on the current paragraph
-            scroll_position = sum(len(wrap_text(paragraphs[i], width // 2 - 4)) + 1 for i in range(current_paragraph))
+            scroll_position = sum(len(wrap_text(paragraphs[i][0], width // 2 - 4)) + 1 for i in range(current_paragraph))
 
             # Save translations to a file
-            write_file(translation_file_path, translations)
+            write_file(translation_file_path, [(translation, para[1]) for translation, para in zip(translations, paragraphs)])
 
             if key == ord('q'):
                 return
