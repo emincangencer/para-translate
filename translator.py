@@ -3,6 +3,7 @@ import os
 import textwrap
 from docx import Document as DocxDocument
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Pt, Inches
 import ollama
 
 def list_documents():
@@ -15,11 +16,19 @@ def read_file(file_path):
     try:
         if file_path.endswith('.docx'):
             doc = DocxDocument(file_path)
-            paragraphs = [(para.text, para.alignment) for para in doc.paragraphs]
+            paragraphs = []
+            for para in doc.paragraphs:
+                text = para.text
+                alignment = para.alignment
+                para_format = para.paragraph_format
+                left_indent = para_format.left_indent.pt if para_format.left_indent else None
+                right_indent = para_format.right_indent.pt if para_format.right_indent else None
+                first_line_indent = para_format.first_line_indent.pt if para_format.first_line_indent else None
+                paragraphs.append((text, alignment, left_indent, right_indent, first_line_indent))
             return paragraphs
         else:
             with open(file_path, 'r', encoding='utf-8') as f:
-                return [(line, WD_ALIGN_PARAGRAPH.LEFT) for line in f.read().splitlines()]
+                return [(line, WD_ALIGN_PARAGRAPH.LEFT, None, None, None) for line in f.read().splitlines()]
     except (UnicodeDecodeError, FileNotFoundError) as e:
         print(f"Error reading {file_path}: {e}")
         return []
@@ -30,16 +39,25 @@ def read_file(file_path):
 def write_file(file_path, paragraphs):
     if file_path.endswith('.docx'):
         doc = DocxDocument()
-        for text, alignment in paragraphs:
+        for text, alignment, left_indent, right_indent, first_line_indent in paragraphs:
             para = doc.add_paragraph(text)
             para.alignment = alignment
+            para_format = para.paragraph_format
+            if left_indent is not None:
+                para_format.left_indent = Pt(left_indent)
+            if right_indent is not None:
+                para_format.right_indent = Pt(right_indent)
+            if first_line_indent is not None:
+                para_format.first_line_indent = Pt(first_line_indent)
         doc.save(file_path)
     else:
         with open(file_path, 'w', encoding='utf-8') as f:
-            f.write('\n\n'.join([text for text, _ in paragraphs]))
+            f.write('\n\n'.join([text for text, _, _, _, _ in paragraphs]))
 
 def segment_paragraphs(text_and_alignments):
-    return [(text, alignment) for text, alignment in text_and_alignments if text.strip()]
+    return [(text, alignment, left_indent, right_indent, first_line_indent) 
+            for text, alignment, left_indent, right_indent, first_line_indent in text_and_alignments 
+            if text.strip()]
 
 def translate_text_with_ollama(text, source_language, target_language, model_name):
     prompt = f"Only provide the translation and nothing else. Translate this {source_language} text into {target_language}: {text}"
@@ -214,6 +232,7 @@ def display_translation_tool(screen):
         file_path = os.path.join('documents', documents[selected_doc])
         content = read_file(file_path)
 
+        # Unpack text, alignment, and indentation in paragraphs
         paragraphs = segment_paragraphs(content)
         current_paragraph = 0
         translations = ['' for _ in paragraphs]
@@ -226,7 +245,7 @@ def display_translation_tool(screen):
 
         if os.path.exists(translation_file_path):
             translated_content = read_file(translation_file_path)
-            for i, (translation, _) in enumerate(translated_content):
+            for i, (translation, _, _, _, _) in enumerate(translated_content):
                 if i < len(translations):
                     translations[i] = translation
 
@@ -238,7 +257,7 @@ def display_translation_tool(screen):
             display_height = height - 6  # Height available for displaying lines
 
             # Wrap the paragraphs and translations for the left and right windows
-            wrapped_paragraphs = [wrap_text(text, width // 2 - 4) for text, _ in paragraphs]
+            wrapped_paragraphs = [wrap_text(text, width // 2 - 4) for text, _, _, _, _ in paragraphs]
             wrapped_translations = [wrap_text(translations[i], width // 2 - 4) for i in range(len(translations))]
 
             # Create a list of lines to display for both the source (left) and translations (right)
@@ -317,8 +336,9 @@ def display_translation_tool(screen):
             # Update the scroll position based on the current paragraph
             scroll_position = sum(len(wrap_text(paragraphs[i][0], width // 2 - 4)) + 1 for i in range(current_paragraph))
 
-            # Save translations to a file
-            write_file(translation_file_path, [(translation, para[1]) for translation, para in zip(translations, paragraphs)])
+            # Save translations to a file, including alignment and indentation
+            write_file(translation_file_path, [(translation, para[1], para[2], para[3], para[4]) 
+                                            for translation, para in zip(translations, paragraphs)])
 
             if key == ord('q'):
                 return
