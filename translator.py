@@ -59,7 +59,8 @@ def translate_text_with_ollama(text, source_language, target_language, model_nam
 
 def get_available_models():
     models_response = ollama.list()
-    models = [model['name'] for model in models_response['models']]
+    # Filter out models with 'embed' in their names
+    models = [model['name'] for model in models_response['models'] if 'embed' not in model['name'].lower()]
     return models
 
 def wrap_text(text, width):
